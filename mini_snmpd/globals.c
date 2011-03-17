@@ -28,7 +28,9 @@
  */
 
 in_port_t g_udp_port = 161;
+#ifdef ENABLE_TCP_SERVER
 in_port_t g_tcp_port = 161;
+#endif
 int g_timeout = 100;
 int g_auth = 0;
 int g_verbose = 0;
@@ -43,10 +45,14 @@ int g_disk_list_length = 0;
 char *g_interface_list[MAX_NR_INTERFACES];
 int g_interface_list_length = 0;
 client_t g_udp_client = { 0, };
+#ifdef ENABLE_TCP_SERVER
 client_t *g_tcp_client_list[MAX_NR_CLIENTS];
 int g_tcp_client_list_length = 0;
+#endif
 int g_udp_sockfd = -1;
+#ifdef ENABLE_TCP_SERVER
 int g_tcp_sockfd = -1;
+#endif
 value_t g_mib[MAX_NR_VALUES];
 int g_mib_length = 0;
 

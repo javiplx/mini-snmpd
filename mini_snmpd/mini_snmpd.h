@@ -226,7 +226,9 @@ typedef struct demoinfo_s {
  */
 
 extern in_port_t g_udp_port;
+#ifdef ENABLE_TCP_SERVER
 extern in_port_t g_tcp_port;
+#endif
 extern int g_timeout;
 extern int g_auth;
 extern int g_verbose;
@@ -241,10 +243,14 @@ extern int g_disk_list_length;
 extern char *g_interface_list[MAX_NR_INTERFACES];
 extern int g_interface_list_length;
 extern client_t g_udp_client;
+#ifdef ENABLE_TCP_SERVER
 extern client_t *g_tcp_client_list[MAX_NR_CLIENTS];
 extern int g_tcp_client_list_length;
+#endif
 extern int g_udp_sockfd;
+#ifdef ENABLE_TCP_SERVER
 extern int g_tcp_sockfd;
+#endif
 extern value_t g_mib[MAX_NR_VALUES];
 extern int g_mib_length;
 extern time_t g_mib_timestamp;
@@ -262,7 +268,9 @@ char *oid_ntoa(const oid_t *oid);
 oid_t *oid_aton(const char *str);
 int oid_cmp(const oid_t *oid1, const oid_t *oid2);
 int split(const char *str, char *delim, char **list, int max_list_length);
+#ifdef ENABLE_TCP_SERVER
 client_t *find_oldest_client(void);
+#endif
 int read_file(const char *filename, char *buffer, size_t size);
 unsigned int read_value(const char *buffer, const char *prefix);
 void read_values(const char *buffer, const char *prefix, unsigned int *values, int count);

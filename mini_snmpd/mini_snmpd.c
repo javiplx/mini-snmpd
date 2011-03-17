@@ -44,7 +44,9 @@ static void print_help(void)
 	fprintf(stderr, "usage: mini_snmpd [options]\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "-p, --udp-port nnn     set the UDP port to bind to (161)\n");
+#ifdef ENABLE_TCP_SERVER
 	fprintf(stderr, "-P, --tcp-port nnn     set the TCP port to bind to (161)\n");
+#endif
 	fprintf(stderr, "-c, --community nnn    set the community string (public)\n");
 	fprintf(stderr, "-D, --description nnn  set the system description (empty)\n");
 	fprintf(stderr, "-V, --vendor nnn       set the system vendor (empty)\n");
@@ -144,6 +146,7 @@ static void handle_udp_client(void)
 #endif
 }
 
+#ifdef ENABLE_TCP_SERVER
 static void handle_tcp_connect(void)
 {
 	struct sockaddr_in6 tmp_sockaddr;
@@ -293,6 +296,7 @@ static void handle_tcp_client_read(client_t *client)
 	}
 	client->outgoing = 1;
 }
+#endif
 
 
 
@@ -302,10 +306,16 @@ static void handle_tcp_client_read(client_t *client)
 
 int main(int argc, char *argv[])
 {
+#ifdef ENABLE_TCP_SERVER
 	static const char short_options[] = "p:P:c:D:V:L:C:d:i:t:T:avlh";
+#else
+	static const char short_options[] = "p:c:D:V:L:C:d:i:t:T:avlh";
+#endif
 	static const struct option long_options[] = {
 		{ "udp-port", 1, 0, 'p' },
+#ifdef ENABLE_TCP_SERVER
 		{ "tcp-port", 1, 0, 'P' },
+#endif
 		{ "community", 1, 0, 'c' },
 		{ "description", 1, 0, 'D' },
 		{ "vendor", 1, 0, 'V' },
@@ -331,9 +341,13 @@ int main(int argc, char *argv[])
 	struct timeval tv_sleep;
 	int ticks;
 	fd_set rfds;
+#ifdef ENABLE_TCP_SERVER
 	fd_set wfds;
+#endif
 	int nfds;
+#ifdef ENABLE_TCP_SERVER
 	int i;
+#endif
 
 	/* Prevent TERM and HUP signals from interrupting system calls */
 	signal(SIGTERM, handle_signal);
@@ -356,9 +370,11 @@ int main(int argc, char *argv[])
 			case 'p':
 				g_udp_port = atoi(optarg);
 				break;
+#ifdef ENABLE_TCP_SERVER
 			case 'P':
 				g_tcp_port = atoi(optarg);
 				break;
+#endif
 			case 'c':
 				g_community = strdup(optarg);
 				break;
@@ -400,8 +416,13 @@ int main(int argc, char *argv[])
 	}
 
 	/* Print a starting message (so the user knows the args were ok) */
+#ifdef ENABLE_TCP_SERVER
 	lprintf(LOG_INFO, "started, listening on port %d/udp and %d/tcp\n",
 		g_udp_port, g_tcp_port);
+#else
+	lprintf(LOG_INFO, "started, listening on port %d/udp\n",
+		g_udp_port);
+#endif
 
 	/* Store the starting time since we need it for MIB updates */
 	if (gettimeofday(&tv_last, NULL) == -1) {
@@ -437,6 +458,7 @@ int main(int argc, char *argv[])
 		exit(EXIT_SYSCALL);
 	}
 
+#ifdef ENABLE_TCP_SERVER
 	/* Open the server's TCP port and prepare it for listening */
 	g_tcp_sockfd = socket(PF_INET6, SOCK_STREAM, 0);
 	if (g_tcp_sockfd == -1) {
@@ -460,13 +482,17 @@ int main(int argc, char *argv[])
 		lprintf(LOG_ERR, "could not prepare TCP socket for listening: %m\n");
 		exit(EXIT_SYSCALL);
 	}
+#endif
 
 	/* Handle incoming connect requests and incoming data */
 	while (!g_quit) {
 		/* Sleep until we get a request or the timeout is over */
 		FD_ZERO(&rfds);
+#ifdef ENABLE_TCP_SERVER
 		FD_ZERO(&wfds);
+#endif
 		FD_SET(g_udp_sockfd, &rfds);
+#ifdef ENABLE_TCP_SERVER
 		FD_SET(g_tcp_sockfd, &rfds);
 		nfds = (g_udp_sockfd > g_tcp_sockfd) ? g_udp_sockfd : g_tcp_sockfd;
 		for (i = 0; i < g_tcp_client_list_length; i++) {
@@ -480,6 +506,10 @@ int main(int argc, char *argv[])
 			}
 		}
 		if (select(nfds + 1, &rfds, &wfds, NULL, &tv_sleep) == -1) {
+#else
+		nfds = g_udp_sockfd;
+		if (select(nfds + 1, &rfds, NULL, NULL, &tv_sleep) == -1) {
+#endif
 			if (g_quit) {
 				break;
 			}
@@ -511,6 +541,7 @@ int main(int argc, char *argv[])
 		if (FD_ISSET(g_udp_sockfd, &rfds)) {
 			handle_udp_client();
 		}
+#ifdef ENABLE_TCP_SERVER
 		if (FD_ISSET(g_tcp_sockfd, &rfds)) {
 			handle_tcp_connect();
 		}
@@ -536,6 +567,7 @@ int main(int argc, char *argv[])
 				}
 			}
 		}
+#endif
 	}
 
 	/* We were killed, print a message and exit */

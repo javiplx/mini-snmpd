@@ -249,6 +249,7 @@ int split(const char *str, char *delim, char **list, int max_list_length)
 	return list_length;
 }
 
+#ifdef ENABLE_TCP_SERVER
 client_t *find_oldest_client(void)
 {
 	time_t timestamp;
@@ -265,6 +266,7 @@ client_t *find_oldest_client(void)
 	}
 	return (pos != -1) ? g_tcp_client_list[i] : NULL;
 }
+#endif
 
 #ifdef __DEMO__
 void get_demoinfo(demoinfo_t *demoinfo)
