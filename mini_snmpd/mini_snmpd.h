@@ -164,6 +164,11 @@ typedef struct value_s {
 	data_t data;
 } value_t;
 
+typedef struct callback_s {
+	oid_t oid;
+	int (*func)(const oid_t *);
+} callback_t;
+
 typedef struct request_s {
 	char community[MAX_STRING_SIZE];
 	int type;
@@ -265,6 +270,8 @@ extern int g_tcp_sockfd;
 extern value_t g_mib[MAX_NR_VALUES];
 extern int g_mib_length;
 extern time_t g_mib_timestamp;
+extern callback_t g_cb[MAX_NR_VALUES];
+extern int g_cb_length;
 
 
 
@@ -306,6 +313,8 @@ int mib_build(void);
 int mib_update(int full);
 value_t *mib_find(const oid_t *oid, int *pos);
 value_t *mib_findnext(const oid_t *oid);
+void mib_find_cb(const oid_t *oid, int (**cb)(const oid_t *));
+void mib_findnext_cb(const oid_t *oid, int (**cb)(const oid_t *));
 
 
 

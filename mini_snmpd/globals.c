@@ -55,6 +55,8 @@ int g_tcp_sockfd = -1;
 #endif
 value_t g_mib[MAX_NR_VALUES];
 int g_mib_length = 0;
+callback_t g_cb[MAX_NR_VALUES];
+int g_cb_length = 0;
 
 
 
