@@ -755,6 +755,17 @@ static int encode_snmp_response(request_t *request, response_t *response, client
  * Helper functions for requests
  */
 
+#define SNMP_ERROR_MESSAGE(resp,req,errmsg,errtxt) \
+			if (req->version == SNMP_VERSION_1) { \
+				SNMP_VERSION_1_ERROR(resp,SNMP_STATUS_NO_SUCH_NAME,i); \
+				return 0; \
+			} else if (resp->value_list_length < MAX_NR_VALUES) { \
+				SNMP_VERSION_2_ERROR(resp,req,errmsg); \
+			} else { \
+				lprintf(LOG_ERR, errtxt); \
+				return -1; \
+			}
+
 static int handle_snmp_get(request_t *request, response_t *response, client_t *client)
 {
 	int pos;
@@ -769,35 +780,11 @@ static int handle_snmp_get(request_t *request, response_t *response, client_t *c
 		if (pos == -1) {
 			return -1;
 		} else if (pos >= g_mib_length) {
-			if (request->version == SNMP_VERSION_1) {
-				SNMP_VERSION_1_ERROR(response,SNMP_STATUS_NO_SUCH_NAME,i);
-				return 0;
-			} else if (response->value_list_length < MAX_NR_VALUES) {
-				SNMP_VERSION_2_ERROR(response,request,m_no_such_object);
-			} else {
-				lprintf(LOG_ERR, "could not handle SNMP GET: value list overflow\n");
-				return -1;
-			}
+			SNMP_ERROR_MESSAGE(response,request,m_no_such_object,"could not handle SNMP GET: value list overflow\n")
 		} else if (g_mib[pos].oid.subid_list_length == (request->oid_list[i].subid_list_length + 1)) {
-			if (request->version == SNMP_VERSION_1) {
-				SNMP_VERSION_1_ERROR(response,SNMP_STATUS_NO_SUCH_NAME,i);
-				return 0;
-			} else if (response->value_list_length < MAX_NR_VALUES) {
-				SNMP_VERSION_2_ERROR(response,request,m_no_such_instance);
-			} else {
-				lprintf(LOG_ERR, "could not handle SNMP GET: value list overflow\n");
-				return -1;
-			}
+			SNMP_ERROR_MESSAGE(response,request,m_no_such_instance,"could not handle SNMP GET: value list overflow\n")
 		} else if (g_mib[pos].oid.subid_list_length != request->oid_list[i].subid_list_length) {
-			if (request->version == SNMP_VERSION_1) {
-				SNMP_VERSION_1_ERROR(response,SNMP_STATUS_NO_SUCH_NAME,i);
-				return 0;
-			} else if (response->value_list_length < MAX_NR_VALUES) {
-				SNMP_VERSION_2_ERROR(response,request,m_no_such_object);
-			} else {
-				lprintf(LOG_ERR, "could not handle SNMP GET: value list overflow\n");
-				return -1;
-			}
+			SNMP_ERROR_MESSAGE(response,request,m_no_such_object,"could not handle SNMP GET: value list overflow\n")
 		} else {
 			if (response->value_list_length < MAX_NR_VALUES) {
 				memcpy(&response->value_list[response->value_list_length],
@@ -827,15 +814,7 @@ static int handle_snmp_getnext(request_t *request, response_t *response, client_
 		if (pos == -1) {
 			return -1;
 		} else if (pos >= g_mib_length) {
-			if (request->version == SNMP_VERSION_1) {
-				SNMP_VERSION_1_ERROR(response,SNMP_STATUS_NO_SUCH_NAME,i);
-				return 0;
-			} else if (response->value_list_length < MAX_NR_VALUES) {
-				SNMP_VERSION_2_ERROR(response,request,m_end_of_mib_view);
-			} else {
-				lprintf(LOG_ERR, "could not handle SNMP GETNEXT: value list overflow\n");
-				return -1;
-			}
+			SNMP_ERROR_MESSAGE(response,request,m_end_of_mib_view,"could not handle SNMP GETNEXT: value list overflow\n")
 		} else {
 			if (response->value_list_length < MAX_NR_VALUES) {
 				memcpy(&response->value_list[response->value_list_length],
@@ -850,6 +829,8 @@ static int handle_snmp_getnext(request_t *request, response_t *response, client_
 
 	return 0;
 }
+
+#undef SNMP_ERROR_MESSAGE
 
 static int handle_snmp_set(request_t *request, response_t *response, client_t *client)
 {
