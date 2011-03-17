@@ -120,6 +120,17 @@
 	} while (0)
 #endif
 
+#define SNMP_VERSION_1_ERROR(resp,err,i) \
+	(resp)->error_status = err; \
+	(resp)->error_index = i;
+
+#define SNMP_VERSION_2_ERROR(resp,req,err) \
+	memcpy(&resp->value_list[resp->value_list_length].oid, \
+		&req->oid_list[i], sizeof (req->oid_list[i])); \
+	memcpy(&resp->value_list[resp->value_list_length].data, \
+		&err, sizeof (err)); \
+	response->value_list_length++
+
 
 
 /* -----------------------------------------------------------------------------
