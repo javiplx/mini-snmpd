@@ -365,14 +365,7 @@ static int mib_update_entry(const oid_t *prefix, int column, int row,
 	}
 
 	/* Search the the MIB for the given OID beginning at the given position */
-	while (*pos < g_mib_length) {
-		if (g_mib[*pos].oid.subid_list_length == oid.subid_list_length
-			&& !memcmp(g_mib[*pos].oid.subid_list, oid.subid_list,
-				oid.subid_list_length * sizeof (oid.subid_list[0]))) {
-			break;
-		}
-		*pos = *pos + 1;
-	}
+	mib_find(&oid, pos);
 	if (*pos >= g_mib_length) {
 		lprintf(LOG_ERR, "could not update MIB entry '%s.%d.%d': oid not found\n",
 			oid_ntoa(prefix), column, row);
@@ -790,20 +783,16 @@ int mib_update(int full)
 	return 0;
 }
 
-int mib_find(const oid_t *oid)
+void mib_find(const oid_t *oid, int *pos)
 {
-	int pos;
-
 	/* Find the OID in the MIB that is exactly the given one or a subid */
-	for (pos = 0; pos < g_mib_length; pos++) {
-		if (g_mib[pos].oid.subid_list_length >= oid->subid_list_length
-			&& !memcmp(g_mib[pos].oid.subid_list, oid->subid_list,
+	for ( ; *pos < g_mib_length; (*pos)++) {
+		if (g_mib[*pos].oid.subid_list_length >= oid->subid_list_length
+			&& !memcmp(g_mib[*pos].oid.subid_list, oid->subid_list,
 				oid->subid_list_length * sizeof (oid->subid_list[0]))) {
-			break;
+			return;
 		}
 	}
-
-	return pos;
 }
 
 int mib_findnext(const oid_t *oid)
