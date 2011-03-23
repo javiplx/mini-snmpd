@@ -164,6 +164,12 @@ typedef struct value_s {
 	data_t data;
 } value_t;
 
+typedef struct subtree_s {
+	oid_t oid;
+	short length;
+	value_t *subtree;
+} subtree_t;
+
 typedef struct request_s {
 	char community[MAX_STRING_SIZE];
 	int type;
@@ -264,6 +270,8 @@ extern int g_tcp_sockfd;
 #endif
 extern value_t g_mib[MAX_NR_VALUES];
 extern int g_mib_length;
+extern subtree_t g_sub[MAX_NR_VALUES];
+extern int g_sub_length;
 extern time_t g_mib_timestamp;
 
 
@@ -278,6 +286,7 @@ void dump_response(const response_t *response);
 char *oid_ntoa(const oid_t *oid);
 oid_t *oid_aton(const char *str);
 int oid_cmp(const oid_t *oid1, const oid_t *oid2);
+int oid_below(const oid_t *oid1, const oid_t *oid2);
 int split(const char *str, char *delim, char **list, int max_list_length);
 #ifdef ENABLE_TCP_SERVER
 client_t *find_oldest_client(void);

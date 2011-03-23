@@ -233,6 +233,21 @@ int oid_cmp(const oid_t *oid1, const oid_t *oid2)
 	return 0;
 }
 
+/* Returns 0 if oid2 is below oid1, -1 if it is over, +1 if sibling */
+int oid_below(const oid_t *oid1, const oid_t *oid2)
+{
+	int i;
+
+	if ( oid1->subid_list_length > oid2->subid_list_length )
+		return -1;
+
+	for (i = 0; i < oid1->subid_list_length; i++) {
+		if (oid1->subid_list[i] != oid2->subid_list[i])
+			return 1;
+	}
+	return 0;
+}
+
 int split(const char *str, char *delim, char **list, int max_list_length)
 {
 	char buffer[BUFSIZ];

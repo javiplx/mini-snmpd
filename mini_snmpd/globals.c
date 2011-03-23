@@ -55,6 +55,8 @@ int g_tcp_sockfd = -1;
 #endif
 value_t g_mib[MAX_NR_VALUES];
 int g_mib_length = 0;
+subtree_t g_sub[MAX_NR_VALUES];
+int g_sub_length = 0;
 
 
 
