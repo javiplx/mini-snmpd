@@ -768,7 +768,7 @@ static int encode_snmp_response(request_t *request, response_t *response, client
 
 static int handle_snmp_get(request_t *request, response_t *response, client_t *client)
 {
-	int pos;
+	int pos = 0;
 	int i;
 
 	/* Search each varbinding of the request and append the value to the
