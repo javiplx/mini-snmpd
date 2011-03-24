@@ -868,12 +868,24 @@ value_t *mib_find(const oid_t *oid, int *pos)
 
 value_t *mib_findnext(const oid_t *oid)
 {
-	int pos;
+	int mpos;
+
+	for (mpos = 0; mpos < g_sub_length; mpos++) {
+		if ( oid_below(&g_sub[mpos].oid, oid) == 0 ) {
+			int i;
+			for (i = 0; i < g_sub[mpos].length; i++) {
+				int n = oid_cmp(&(g_sub[mpos].subtree[i].oid), oid);
+				if ( n > 0 )
+					return &g_sub[mpos].subtree[i];
+			}
+			break;
+		}
+	}
 
 	/* Find the OID in the MIB that is the one after the given one */
-	for (pos = 0; pos < g_mib_length; pos++) {
-		if (oid_cmp(&g_mib[pos].oid, oid) > 0) {
-			return &g_mib[pos];
+	for (mpos = 0; mpos < g_mib_length; mpos++) {
+		if (oid_cmp(&g_mib[mpos].oid, oid) > 0) {
+			return &g_mib[mpos];
 		}
 	}
 
