@@ -204,12 +204,13 @@ static int encode_snmp_element_unsigned(value_t *value, int type, unsigned int t
  * Helper functions for the MIB
  */
 
+void set_oid_encoded_length(oid_t *oid);
+int mib_set_value(value_t *subtree, int column, int row, int type, const void *default_value);
+
 static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 	const void *default_value)
 {
 	value_t *value;
-	int length;
-	int i;
 
 	/* Create a new entry in the MIB table */
 	if (g_mib_length < MAX_NR_VALUES) {
@@ -237,26 +238,35 @@ static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 		return -1;
 	}
 
-	/* Calculate the encoded length of the created OID (note: first the length
-	 * of the subid list, then the length of the length/type header!)
-	 */
-	length = 1;
-	for (i = 2; i < value->oid.subid_list_length; i++) {
-		if (value->oid.subid_list[i] >= (1 << 28)) {
+	set_oid_encoded_length(&value->oid);
+
+	return mib_set_value(value, column, row, type, default_value);
+}
+
+/* Calculate the encoded length of the created OID (note: first the length
+ * of the subid list, then the length of the length/type header!)
+ */
+void set_oid_encoded_length(oid_t *oid)
+{
+	int length = 1;
+	int i;
+
+	for (i = 2; i < oid->subid_list_length; i++) {
+		if (oid->subid_list[i] >= (1 << 28)) {
 			length += 5;
-		} else if (value->oid.subid_list[i] >= (1 << 21)) {
+		} else if (oid->subid_list[i] >= (1 << 21)) {
 			length += 4;
-		} else if (value->oid.subid_list[i] >= (1 << 14)) {
+		} else if (oid->subid_list[i] >= (1 << 14)) {
 			length += 3;
-		} else if (value->oid.subid_list[i] >= (1 << 7)) {
+		} else if (oid->subid_list[i] >= (1 << 7)) {
 			length += 2;
 		} else {
 			length += 1;
 		}
 	}
 	if (length > 0xFFFF) {
-		lprintf(LOG_ERR, "could not encode '%s': oid overflow\n", oid_ntoa(&value->oid));
-		return -1;
+		lprintf(LOG_ERR, "could not encode '%s': oid overflow\n", oid_ntoa(oid));
+		length = -1;
 	} else if (length > 0xFF) {
 		length += 4;
 	} else if (length > 0x7F) {
@@ -264,7 +274,18 @@ static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 	} else {
 		length += 2;
 	}
-	value->oid.encoded_length = length;
+
+	oid->encoded_length = length;
+}
+
+/* Create a data buffer for the value depending on the type:
+ *
+ * - strings and oids are assumed to be static or have the maximum allowed length
+ * - integers are assumed to be dynamic and don't have more than 32 bits
+ */
+int mib_set_value( value_t *value, int column, int row, int type,
+	const void *default_value)
+{
 
 	/* Paranoia check against invalid default parameter (null pointer) */
 	switch (type) {
@@ -272,7 +293,7 @@ static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 		case BER_TYPE_OID:
 			if (default_value == NULL) {
 				lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': invalid default value\n",
-					oid_ntoa(prefix), column, row);
+					oid_ntoa(&value->oid), column, row);
 				return -1;
 			}
 			break;
@@ -280,11 +301,6 @@ static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 			break;
 	}
 
-	/* Create a data buffer for the value depending on the type:
-	 *
-	 * - strings and oids are assumed to be static or have the maximum allowed length
-	 * - integers are assumed to be dynamic and don't have more than 32 bits
-	 */
 	switch (type) {
 		case BER_TYPE_INTEGER:
 			value->data.max_length = sizeof (int) + 2;
@@ -322,7 +338,7 @@ static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 			break;
 		default:
 			lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': unsupported type %d\n",
-				oid_ntoa(prefix), column, row, type);
+				oid_ntoa(&value->oid), column, row, type);
 			return -1;
 	}
 
