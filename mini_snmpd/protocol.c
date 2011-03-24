@@ -907,7 +907,7 @@ static int handle_snmp_getbulk(request_t *request, response_t *response, client_
 					memcpy(&response->value_list[response->value_list_length],
 						value, sizeof (*value));
 					response->value_list_length++;
-					memcpy(&oid_list[i], value->oid, sizeof (*value->oid));
+					memcpy(&oid_list[i], &value->oid, sizeof (value->oid));
 					found_repeater++;
 				} else {
 					lprintf(LOG_ERR, "could not handle SNMP GETNEXT: value list overflow\n");
