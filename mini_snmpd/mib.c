@@ -361,6 +361,7 @@ static int mib_build_entries(const oid_t *prefix, int column, int row_from,
 static int mib_update_entry(const oid_t *prefix, int column, int row,
 	int *pos, int type, const void *new_value)
 {
+	value_t *value;
 	oid_t oid;
 
 	/* Create the OID from the prefix, the column and the row */
@@ -381,8 +382,8 @@ static int mib_update_entry(const oid_t *prefix, int column, int row,
 	}
 
 	/* Search the the MIB for the given OID beginning at the given position */
-	mib_find(&oid, pos);
-	if (*pos >= g_mib_length) {
+	value = mib_find(&oid, pos);
+	if (value == NULL) {
 		lprintf(LOG_ERR, "could not update MIB entry '%s.%d.%d': oid not found\n",
 			oid_ntoa(prefix), column, row);
 		return -1;
@@ -408,24 +409,24 @@ static int mib_update_entry(const oid_t *prefix, int column, int row,
 	 */
 	switch (type) {
 		case BER_TYPE_INTEGER:
-			if (encode_snmp_element_integer(&g_mib[*pos], (int)new_value) == -1) {
+			if (encode_snmp_element_integer(value, (int)new_value) == -1) {
 				return -1;
 			}
 			break;
 		case BER_TYPE_OCTET_STRING:
-			if (encode_snmp_element_string(&g_mib[*pos], (const char *)new_value) == -1) {
+			if (encode_snmp_element_string(value, (const char *)new_value) == -1) {
 				return -1;
 			}
 			break;
 		case BER_TYPE_OID:
-			if (encode_snmp_element_oid(&g_mib[*pos], oid_aton((const char *)new_value)) == -1) {
+			if (encode_snmp_element_oid(value, oid_aton((const char *)new_value)) == -1) {
 				return -1;
 			}
 			break;
 		case BER_TYPE_COUNTER:
 		case BER_TYPE_GAUGE:
 		case BER_TYPE_TIME_TICKS:
-			if (encode_snmp_element_unsigned(&g_mib[*pos], type, (unsigned int)new_value) == -1) {
+			if (encode_snmp_element_unsigned(value, type, (unsigned int)new_value) == -1) {
 				return -1;
 			}
 			break;
@@ -799,30 +800,32 @@ int mib_update(int full)
 	return 0;
 }
 
-void mib_find(const oid_t *oid, int *pos)
+value_t *mib_find(const oid_t *oid, int *pos)
 {
 	/* Find the OID in the MIB that is exactly the given one or a subid */
 	for ( ; *pos < g_mib_length; (*pos)++) {
 		if (g_mib[*pos].oid.subid_list_length >= oid->subid_list_length
 			&& !memcmp(g_mib[*pos].oid.subid_list, oid->subid_list,
 				oid->subid_list_length * sizeof (oid->subid_list[0]))) {
-			return;
+			return &g_mib[*pos];
 		}
 	}
+
+	return NULL;
 }
 
-int mib_findnext(const oid_t *oid)
+value_t *mib_findnext(const oid_t *oid)
 {
 	int pos;
 
 	/* Find the OID in the MIB that is the one after the given one */
 	for (pos = 0; pos < g_mib_length; pos++) {
 		if (oid_cmp(&g_mib[pos].oid, oid) > 0) {
-			break;
+			return &g_mib[pos];
 		}
 	}
 
-	return pos;
+	return NULL;
 }
 
 

@@ -768,6 +768,7 @@ static int encode_snmp_response(request_t *request, response_t *response, client
 
 static int handle_snmp_get(request_t *request, response_t *response, client_t *client)
 {
+	value_t *value;
 	int pos = 0;
 	int i;
 
@@ -776,19 +777,17 @@ static int handle_snmp_get(request_t *request, response_t *response, client_t *c
 	 * subid of the requested one (table cell of table column)!
 	 */
 	for (i = 0; i < request->oid_list_length; i++) {
-		mib_find(&request->oid_list[i], &pos);
-		if (pos == -1) {
-			return -1;
-		} else if (pos >= g_mib_length) {
+		value = mib_find(&request->oid_list[i], &pos);
+		if (value == NULL) {
 			SNMP_ERROR_MESSAGE(response,request,m_no_such_object,"could not handle SNMP GET: value list overflow\n")
-		} else if (g_mib[pos].oid.subid_list_length == (request->oid_list[i].subid_list_length + 1)) {
+		} else if (value->oid.subid_list_length == (request->oid_list[i].subid_list_length + 1)) {
 			SNMP_ERROR_MESSAGE(response,request,m_no_such_instance,"could not handle SNMP GET: value list overflow\n")
-		} else if (g_mib[pos].oid.subid_list_length != request->oid_list[i].subid_list_length) {
+		} else if (value->oid.subid_list_length != request->oid_list[i].subid_list_length) {
 			SNMP_ERROR_MESSAGE(response,request,m_no_such_object,"could not handle SNMP GET: value list overflow\n")
 		} else {
 			if (response->value_list_length < MAX_NR_VALUES) {
 				memcpy(&response->value_list[response->value_list_length],
-					&g_mib[pos], sizeof (g_mib[pos]));
+					value, sizeof (*value));
 				response->value_list_length++;
 			} else {
 				lprintf(LOG_ERR, "could not handle SNMP GET: value list overflow\n");
@@ -802,7 +801,7 @@ static int handle_snmp_get(request_t *request, response_t *response, client_t *c
 
 static int handle_snmp_getnext(request_t *request, response_t *response, client_t *client)
 {
-	int pos;
+	value_t *value;
 	int i;
 
 	/* Search each varbinding of the request and append the value to the
@@ -810,15 +809,13 @@ static int handle_snmp_getnext(request_t *request, response_t *response, client_
 	 * subid of the requested one (table cell of table column)!
 	 */
 	for (i = 0; i < request->oid_list_length; i++) {
-		pos = mib_findnext(&request->oid_list[i]);
-		if (pos == -1) {
-			return -1;
-		} else if (pos >= g_mib_length) {
+		value = mib_findnext(&request->oid_list[i]);
+		if (value == NULL) {
 			SNMP_ERROR_MESSAGE(response,request,m_end_of_mib_view,"could not handle SNMP GETNEXT: value list overflow\n")
 		} else {
 			if (response->value_list_length < MAX_NR_VALUES) {
 				memcpy(&response->value_list[response->value_list_length],
-					&g_mib[pos], sizeof (g_mib[pos]));
+					value, sizeof (*value));
 				response->value_list_length++;
 			} else {
 				lprintf(LOG_ERR, "could not handle SNMP GETNEXT: value list overflow\n");
@@ -841,10 +838,10 @@ static int handle_snmp_set(request_t *request, response_t *response, client_t *c
 
 static int handle_snmp_getbulk(request_t *request, response_t *response, client_t *client)
 {
+	value_t *value;
 	oid_t oid_list[MAX_NR_OIDS];
 	int oid_list_length;
 	int found_repeater;
-	int pos;
 	int i;
 	int j;
 
@@ -865,10 +862,8 @@ static int handle_snmp_getbulk(request_t *request, response_t *response, client_
 		if (i >= request->non_repeaters) {
 			break;
 		}
-		pos = mib_findnext(&oid_list[i]);
-		if (pos == -1) {
-			return -1;
-		} else if (pos >= g_mib_length) {
+		value = mib_findnext(&oid_list[i]);
+		if (value == NULL) {
 			if (response->value_list_length < MAX_NR_VALUES) {
 				SNMP_VERSION_2_ERROR(response,request,m_end_of_mib_view);
 			} else {
@@ -878,7 +873,7 @@ static int handle_snmp_getbulk(request_t *request, response_t *response, client_
 		} else {
 			if (response->value_list_length < MAX_NR_VALUES) {
 				memcpy(&response->value_list[response->value_list_length],
-					&g_mib[pos], sizeof (g_mib[pos]));
+					value, sizeof (*value));
 				response->value_list_length++;
 			} else {
 				lprintf(LOG_ERR, "could not handle SNMP GETNEXT: value list overflow\n");
@@ -899,10 +894,8 @@ static int handle_snmp_getbulk(request_t *request, response_t *response, client_
 	for (j = 0; j < request->max_repetitions; j++) {
 		found_repeater = 0;
 		for (i = request->non_repeaters; i < oid_list_length; i++) {
-			pos = mib_findnext(&oid_list[i]);
-			if (pos == -1) {
-				return -1;
-			} else if (pos >= g_mib_length) {
+			value = mib_findnext(&oid_list[i]);
+			if (value == NULL) {
 				if (response->value_list_length < MAX_NR_VALUES) {
 					SNMP_VERSION_2_ERROR(response,request,m_end_of_mib_view);
 				} else {
@@ -912,9 +905,9 @@ static int handle_snmp_getbulk(request_t *request, response_t *response, client_
 			} else {
 				if (response->value_list_length < MAX_NR_VALUES) {
 					memcpy(&response->value_list[response->value_list_length],
-						&g_mib[pos], sizeof (g_mib[pos]));
+						value, sizeof (*value));
 					response->value_list_length++;
-					memcpy(&oid_list[i], &g_mib[pos].oid, sizeof (g_mib[pos].oid));
+					memcpy(&oid_list[i], value->oid, sizeof (*value->oid));
 					found_repeater++;
 				} else {
 					lprintf(LOG_ERR, "could not handle SNMP GETNEXT: value list overflow\n");
