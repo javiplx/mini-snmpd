@@ -207,10 +207,9 @@ static int encode_snmp_element_unsigned(value_t *value, int type, unsigned int t
 void set_oid_encoded_length(oid_t *oid);
 int mib_set_value(value_t *subtree, int column, int row, int type, const void *default_value);
 
-subtree_t *mib_build_subtree(const oid_t *prefix, int columns)
+subtree_t *mib_subtree_alloc(const oid_t *prefix, int columns)
 {
 	subtree_t *value;
-	int i;
 
 	/* Create a new entry in the MIB table */
 	if (g_sub_length < MAX_NR_VALUES) {
@@ -226,14 +225,36 @@ subtree_t *mib_build_subtree(const oid_t *prefix, int columns)
 	value->length = columns;
 
 	value->subtree = (value_t *) calloc( columns , sizeof(value_t) );
-	for (i = 0; i < columns; i++) {
-		char *oid_str = oid_ntoa( prefix );
-		sprintf(oid_str + strlen(oid_str), ".%d.0", i+1);
-		memcpy( &value->subtree[i].oid , oid_aton(oid_str) , sizeof(oid_t) );
-		set_oid_encoded_length( &value->subtree[i].oid );
-	}
+	memset(value->subtree, '\0', columns*sizeof(value_t) );
 
 	return value;
+}
+
+static int mib_build_subentry(subtree_t *subtree, int idx, int column, int row, int type,
+	const void *default_value)
+{
+	value_t *value = &subtree->subtree[idx];
+
+	/* Create the OID from the prefix, the column and the row */
+	memcpy(&value->oid, &subtree->oid, sizeof (value->oid));
+	if (value->oid.subid_list_length < MAX_NR_SUBIDS) {
+		value->oid.subid_list[value->oid.subid_list_length++] = column;
+	} else {
+		lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': oid overflow\n",
+			oid_ntoa(&subtree->oid), column, row);
+		return -1;
+	}
+	if (value->oid.subid_list_length < MAX_NR_SUBIDS) {
+		value->oid.subid_list[value->oid.subid_list_length++] = row;
+	} else {
+		lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': oid overflow\n",
+			oid_ntoa(&subtree->oid), column, row);
+		return -1;
+	}
+
+	set_oid_encoded_length(&value->oid);
+
+	return mib_set_value(value, column, row, type, default_value);
 }
 
 /* -----------------------------------------------------------------------------
@@ -516,20 +537,20 @@ int mib_build(void)
 	/* The system MIB: basic info about the host (SNMPv2-MIB.txt)
 	 * Caution: on changes, adapt the corresponding mib_update() section too!
 	 */
-	subtree = mib_build_subtree(&m_system_oid, 6);
-	if (mib_set_value(&subtree->subtree[0], 1, 0, BER_TYPE_OCTET_STRING, g_description) == -1
-		|| mib_set_value(&subtree->subtree[1], 2, 0, BER_TYPE_OID, g_vendor) == -1
-		|| mib_set_value(&subtree->subtree[2], 3, 0, BER_TYPE_TIME_TICKS, (const void *)0) == -1
-		|| mib_set_value(&subtree->subtree[3], 4, 0, BER_TYPE_OCTET_STRING, g_contact) == -1
-		|| mib_set_value(&subtree->subtree[4], 5, 0, BER_TYPE_OCTET_STRING, hostname) == -1
-		|| mib_set_value(&subtree->subtree[5], 6, 0, BER_TYPE_OCTET_STRING, g_location) == -1) {
+	subtree = mib_subtree_alloc(&m_system_oid, 6);
+	if (mib_build_subentry(subtree, 0, 1, 0, BER_TYPE_OCTET_STRING, g_description) == -1
+		|| mib_build_subentry(subtree, 1, 2, 0, BER_TYPE_OID, g_vendor) == -1
+		|| mib_build_subentry(subtree, 2, 3, 0, BER_TYPE_TIME_TICKS, (const void *)0) == -1
+		|| mib_build_subentry(subtree, 3, 4, 0, BER_TYPE_OCTET_STRING, g_contact) == -1
+		|| mib_build_subentry(subtree, 4, 5, 0, BER_TYPE_OCTET_STRING, hostname) == -1
+		|| mib_build_subentry(subtree, 5, 6, 0, BER_TYPE_OCTET_STRING, g_location) == -1) {
 		return -1;
 	}
 
 	/* The interface MIB: network interfaces (IF-MIB.txt)
 	 * Caution: on changes, adapt the corresponding mib_update() section too!
 	 */
-	subtree = mib_build_subtree(&m_if_1_oid, 0);
+	subtree = mib_subtree_alloc(&m_if_1_oid, 0);
 	if (g_interface_list_length > 0) {
 		if (mib_build_entry(&m_if_1_oid, 1, 0, BER_TYPE_INTEGER, (const void *)g_interface_list_length) == -1) {
 			return -1;
@@ -560,7 +581,7 @@ int mib_build(void)
 	/* The host MIB: additional host info (HOST-RESOURCES-MIB.txt)
 	 * Caution: on changes, adapt the corresponding mib_update() section too!
 	 */
-	subtree = mib_build_subtree(&m_host_oid, 0);
+	subtree = mib_subtree_alloc(&m_host_oid, 0);
 	if (mib_build_entry(&m_host_oid, 1, 0, BER_TYPE_TIME_TICKS, (const void *)0) == -1) {
 		return -1;
 	}
@@ -568,12 +589,12 @@ int mib_build(void)
 	/* The memory MIB: total/free memory (UCD-SNMP-MIB.txt)
 	 * Caution: on changes, adapt the corresponding mib_update() section too!
 	 */
-	subtree = mib_build_subtree(&m_memory_oid, 0);
-	if (mib_build_entry(&m_memory_oid, 5, 0, BER_TYPE_INTEGER, (const void *)0) == -1
-		|| mib_build_entry(&m_memory_oid, 6, 0, BER_TYPE_INTEGER, (const void *)0) == -1
-		|| mib_build_entry(&m_memory_oid, 13, 0, BER_TYPE_INTEGER, (const void *)0) == -1
-		|| mib_build_entry(&m_memory_oid, 14, 0, BER_TYPE_INTEGER, (const void *)0) == -1
-		|| mib_build_entry(&m_memory_oid, 15, 0, BER_TYPE_INTEGER, (const void *)0) == -1) {
+	subtree = mib_subtree_alloc(&m_memory_oid, 5);
+	if (mib_build_subentry(subtree, 0, 5, 0, BER_TYPE_INTEGER, (const void *)0) == -1
+		|| mib_build_subentry(subtree, 1, 6, 0, BER_TYPE_INTEGER, (const void *)0) == -1
+		|| mib_build_subentry(subtree, 2, 13, 0, BER_TYPE_INTEGER, (const void *)0) == -1
+		|| mib_build_subentry(subtree, 3, 14, 0, BER_TYPE_INTEGER, (const void *)0) == -1
+		|| mib_build_subentry(subtree, 4, 15, 0, BER_TYPE_INTEGER, (const void *)0) == -1) {
 		return -1;
 	}
 
