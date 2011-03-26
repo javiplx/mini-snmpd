@@ -62,12 +62,12 @@ static const int m_load_avg_times[3] = { 1, 5, 15 };
  * Helper functions for encoding values
  */
 
-static int encode_snmp_element_integer(value_t *value, int integer_value)
+static int encode_snmp_element_integer(data_t *data, int integer_value)
 {
 	unsigned char *buffer;
 	int length;
 
-	buffer = value->data.buffer;
+	buffer = data->buffer;
 	if (integer_value < -16777216 || integer_value > 16777215) {
 		length = 4;
 	} else if (integer_value < -32768 || integer_value > 32767) {
@@ -82,16 +82,16 @@ static int encode_snmp_element_integer(value_t *value, int integer_value)
 	while (length--) {
 		*buffer++ = ((unsigned int)integer_value >> (8 * length)) & 0xFF;
 	}
-	value->data.encoded_length = buffer - value->data.buffer;
+	data->encoded_length = buffer - data->buffer;
 	return 0;
 }
 
-static int encode_snmp_element_string(value_t *value, const char *string_value)
+static int encode_snmp_element_string(data_t *data, const char *string_value)
 {
 	unsigned char *buffer;
 	int length;
 
-	buffer = value->data.buffer;
+	buffer = data->buffer;
 	length = strlen(string_value);
 	*buffer++ = BER_TYPE_OCTET_STRING;
 	if (length > 65535) {
@@ -110,17 +110,17 @@ static int encode_snmp_element_string(value_t *value, const char *string_value)
 	while (*string_value) {
 		*buffer++ = (unsigned char)(*string_value++);
 	}
-	value->data.encoded_length = buffer - value->data.buffer;
+	data->encoded_length = buffer - data->buffer;
 	return 0;
 }
 
-static int encode_snmp_element_oid(value_t *value, const oid_t *oid_value)
+static int encode_snmp_element_oid(data_t *data, const oid_t *oid_value)
 {
 	unsigned char *buffer;
 	int length;
 	int i;
 
-	buffer = value->data.buffer;
+	buffer = data->buffer;
 	length = 1;
 	for (i = 2; i < oid_value->subid_list_length; i++) {
 		if (oid_value->subid_list[i] >= (1 << 28)) {
@@ -170,16 +170,16 @@ static int encode_snmp_element_oid(value_t *value, const oid_t *oid_value)
 			}
 		}
 	}
-	value->data.encoded_length = buffer - value->data.buffer;
+	data->encoded_length = buffer - data->buffer;
 	return 0;
 }
 
-static int encode_snmp_element_unsigned(value_t *value, int type, unsigned int ticks_value)
+static int encode_snmp_element_unsigned(data_t *data, int type, unsigned int ticks_value)
 {
 	unsigned char *buffer;
 	int length;
 
-	buffer = value->data.buffer;
+	buffer = data->buffer;
 	if (ticks_value & 0xFF000000) {
 		length = 4;
 	} else if (ticks_value & 0x00FF0000) {
@@ -194,7 +194,7 @@ static int encode_snmp_element_unsigned(value_t *value, int type, unsigned int t
 	while (length--) {
 		*buffer++ = (ticks_value >> (8 * length)) & 0xFF;
 	}
-	value->data.encoded_length = buffer - value->data.buffer;
+	data->encoded_length = buffer - data->buffer;
 	return 0;
 }
 
@@ -207,7 +207,7 @@ static int encode_snmp_element_unsigned(value_t *value, int type, unsigned int t
 int oid_build(oid_t *dest, const oid_t *prefix, int column, int row);
 int set_oid_encoded_length(oid_t *oid);
 int mib_value_alloc(data_t *data, int type, short max_lenght);
-int mib_set_value(value_t *value, int type, const void *dataval);
+int mib_set_value(data_t *data, int type, const void *dataval);
 
 static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 	const void *default_value)
@@ -240,7 +240,7 @@ static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 	}
 
 	int ret;
-	if((ret=mib_set_value(value, type, default_value))) {
+	if((ret=mib_set_value(&value->data, type, default_value))) {
 		if (ret == 1) {
 			lprintf(LOG_ERR, "could not assign value to MIB entry '%s.%d.%d': unsupported type %d\n",
 					oid_ntoa(&value->oid), column, row, type);
@@ -347,7 +347,7 @@ int mib_value_alloc(data_t *data, int type, short max_length)
  * assume the buffer was allocated to hold the maximum possible value when
  * the MIB was built!
  */
-int mib_set_value(value_t *value, int type, const void *dataval)
+int mib_set_value(data_t *data, int type, const void *dataval)
 {
 
 	/* Paranoia check against invalid default parameter (null pointer) */
@@ -364,24 +364,24 @@ int mib_set_value(value_t *value, int type, const void *dataval)
 
 	switch (type) {
 		case BER_TYPE_INTEGER:
-			if (encode_snmp_element_integer(value, (int)dataval) == -1) {
+			if (encode_snmp_element_integer(data, (int)dataval) == -1) {
 				return -1;
 			}
 			break;
 		case BER_TYPE_OCTET_STRING:
-			if (encode_snmp_element_string(value, (const char *)dataval) == -1) {
+			if (encode_snmp_element_string(data, (const char *)dataval) == -1) {
 				return -1;
 			}
 			break;
 		case BER_TYPE_OID:
-			if (encode_snmp_element_oid(value, oid_aton((const char *)dataval)) == -1) {
+			if (encode_snmp_element_oid(data, oid_aton((const char *)dataval)) == -1) {
 				return -1;
 			}
 			break;
 		case BER_TYPE_COUNTER:
 		case BER_TYPE_GAUGE:
 		case BER_TYPE_TIME_TICKS:
-			if (encode_snmp_element_unsigned(value, type, (unsigned int)dataval) == -1) {
+			if (encode_snmp_element_unsigned(data, type, (unsigned int)dataval) == -1) {
 				return -1;
 			}
 			break;
@@ -426,7 +426,7 @@ static int mib_update_entry(const oid_t *prefix, int column, int row,
 	}
 
 	int ret;
-	if((ret=mib_set_value(value, type, new_value))) {
+	if((ret=mib_set_value(&value->data, type, new_value))) {
 		if (ret == 1) {
 			lprintf(LOG_ERR, "could not assign value to MIB entry '%s.%d.%d': unsupported type %d\n",
 					oid_ntoa(prefix), column, row, type);
