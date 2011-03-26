@@ -214,7 +214,7 @@ int mib_set_value(data_t *data, int type, const void *dataval);
 
 /* NOTE : type is currently unused */
 static int mib_build_cbentry(const oid_t *prefix, int column, int row, int type,
-	int (*cb_func)(const oid_t *))
+	value_cb_t cb_func)
 {
 	callback_t *value;
 
@@ -874,7 +874,7 @@ value_t *mib_findnext(const oid_t *oid)
 	return NULL;
 }
 
-void mib_find_cb(const oid_t *oid, int (**cb)(const oid_t *))
+void mib_find_cb(const oid_t *oid, value_cb_t *cb)
 {
 	int pos;
 
@@ -889,7 +889,7 @@ void mib_find_cb(const oid_t *oid, int (**cb)(const oid_t *))
 	}
 }
 
-void mib_findnext_cb(const oid_t *oid, int (**cb)(const oid_t *))
+void mib_findnext_cb(const oid_t *oid, value_cb_t *cb)
 {
 	int pos;
 

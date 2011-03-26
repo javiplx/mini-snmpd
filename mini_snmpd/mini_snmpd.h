@@ -164,9 +164,11 @@ typedef struct value_s {
 	data_t data;
 } value_t;
 
+typedef int (*value_cb_t)(const oid_t *);
+
 typedef struct callback_s {
 	oid_t oid;
-	int (*func)(const oid_t *);
+	value_cb_t func;
 } callback_t;
 
 typedef struct request_s {
@@ -313,8 +315,8 @@ int mib_build(void);
 int mib_update(int full);
 value_t *mib_find(const oid_t *oid, int *pos);
 value_t *mib_findnext(const oid_t *oid);
-void mib_find_cb(const oid_t *oid, int (**cb)(const oid_t *));
-void mib_findnext_cb(const oid_t *oid, int (**cb)(const oid_t *));
+void mib_find_cb(const oid_t *oid, value_cb_t *cb);
+void mib_findnext_cb(const oid_t *oid, value_cb_t *cb);
 
 
 

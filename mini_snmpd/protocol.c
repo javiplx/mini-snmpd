@@ -769,7 +769,7 @@ static int encode_snmp_response(request_t *request, response_t *response, client
 static int handle_snmp_get(request_t *request, response_t *response, client_t *client)
 {
 	value_t *value;
-	int (*cb)(const oid_t *) = NULL;
+	value_cb_t cb = NULL;
 	int pos = 0;
 	int i;
 
@@ -808,7 +808,7 @@ static int handle_snmp_get(request_t *request, response_t *response, client_t *c
 static int handle_snmp_getnext(request_t *request, response_t *response, client_t *client)
 {
 	value_t *value;
-	int (*cb)(const oid_t *) = NULL;
+	value_cb_t cb = NULL;
 	int i;
 
 	/* Search each varbinding of the request and append the value to the
