@@ -205,7 +205,7 @@ static int encode_snmp_element_unsigned(value_t *value, int type, unsigned int t
  */
 
 int oid_build(oid_t *dest, const oid_t *prefix, int column, int row);
-void set_oid_encoded_length(oid_t *oid);
+int set_oid_encoded_length(oid_t *oid);
 int mib_value_alloc(data_t *data, int type, short max_lenght);
 int mib_set_value(value_t *value, int type, const void *dataval);
 
@@ -229,7 +229,9 @@ static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 		return -1;
 	}
 
-	set_oid_encoded_length(&value->oid);
+	if (set_oid_encoded_length(&value->oid)) {
+		lprintf(LOG_ERR, "could not encode '%s': oid overflow\n", oid_ntoa(&value->oid));
+	}
 
 	if(mib_value_alloc(&value->data, type, type==BER_TYPE_OCTET_STRING?strlen((const char *)default_value):-1)) {
 		lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': unsupported type %d\n",
@@ -272,36 +274,36 @@ int oid_build(oid_t *dest, const oid_t *prefix, int column, int row)
 /* Calculate the encoded length of the created OID (note: first the length
  * of the subid list, then the length of the length/type header!)
  */
-void set_oid_encoded_length(oid_t *oid)
+int set_oid_encoded_length(oid_t *oid)
 {
-	int length = 1;
 	int i;
 
+	oid->encoded_length = 1;
 	for (i = 2; i < oid->subid_list_length; i++) {
 		if (oid->subid_list[i] >= (1 << 28)) {
-			length += 5;
+			oid->encoded_length += 5;
 		} else if (oid->subid_list[i] >= (1 << 21)) {
-			length += 4;
+			oid->encoded_length += 4;
 		} else if (oid->subid_list[i] >= (1 << 14)) {
-			length += 3;
+			oid->encoded_length += 3;
 		} else if (oid->subid_list[i] >= (1 << 7)) {
-			length += 2;
+			oid->encoded_length += 2;
 		} else {
-			length += 1;
+			oid->encoded_length += 1;
 		}
 	}
-	if (length > 0xFFFF) {
-		lprintf(LOG_ERR, "could not encode '%s': oid overflow\n", oid_ntoa(oid));
-		length = -1;
-	} else if (length > 0xFF) {
-		length += 4;
-	} else if (length > 0x7F) {
-		length += 3;
+	if (oid->encoded_length > 0xFFFF) {
+		oid->encoded_length = -1;
+		return -1;
+	} else if (oid->encoded_length > 0xFF) {
+		oid->encoded_length += 4;
+	} else if (oid->encoded_length > 0x7F) {
+		oid->encoded_length += 3;
 	} else {
-		length += 2;
+		oid->encoded_length += 2;
 	}
 
-	oid->encoded_length = length;
+	return 0;
 }
 
 /* Create a data buffer for the value depending on the type:
