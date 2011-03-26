@@ -769,7 +769,6 @@ static int encode_snmp_response(request_t *request, response_t *response, client
 static int handle_snmp_get(request_t *request, response_t *response, client_t *client)
 {
 	value_t *value;
-	value_cb_t cb = NULL;
 	int pos = 0;
 	int i;
 
@@ -778,11 +777,6 @@ static int handle_snmp_get(request_t *request, response_t *response, client_t *c
 	 * subid of the requested one (table cell of table column)!
 	 */
 	for (i = 0; i < request->oid_list_length; i++) {
-		mib_find_cb(&request->oid_list[i], &cb);
-		if ( cb ) {
-			lprintf(LOG_ERR, "Got callback %p\n", cb);
-			cb(&request->oid_list[i]);
-		}
 		value = mib_find(&request->oid_list[i], &pos);
 		if (value == NULL) {
 			SNMP_ERROR_MESSAGE(response,request,m_no_such_object,"could not handle SNMP GET: value list overflow\n")
@@ -808,7 +802,6 @@ static int handle_snmp_get(request_t *request, response_t *response, client_t *c
 static int handle_snmp_getnext(request_t *request, response_t *response, client_t *client)
 {
 	value_t *value;
-	value_cb_t cb = NULL;
 	int i;
 
 	/* Search each varbinding of the request and append the value to the
@@ -816,11 +809,6 @@ static int handle_snmp_getnext(request_t *request, response_t *response, client_
 	 * subid of the requested one (table cell of table column)!
 	 */
 	for (i = 0; i < request->oid_list_length; i++) {
-		mib_findnext_cb(&request->oid_list[i], &cb);
-		if ( cb ) {
-			lprintf(LOG_ERR, "Got callback %p\n", cb);
-			cb(&request->oid_list[i]);
-		}
 		value = mib_findnext(&request->oid_list[i]);
 		if (value == NULL) {
 			SNMP_ERROR_MESSAGE(response,request,m_end_of_mib_view,"could not handle SNMP GETNEXT: value list overflow\n")

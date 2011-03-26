@@ -207,35 +207,18 @@ static int encode_snmp_element_unsigned(data_t *data, int type, unsigned int tic
  * Helper functions for the MIB
  */
 
+value_t *mib_alloc_entry(const oid_t *prefix, int column, int row, int type, short datalen);
 int oid_build(oid_t *dest, const oid_t *prefix, int column, int row);
 int set_oid_encoded_length(oid_t *oid);
 int mib_value_alloc(data_t *data, int type, short max_lenght);
 int mib_set_value(data_t *data, int type, const void *dataval);
 
-/* NOTE : type is currently unused */
 static int mib_build_cbentry(const oid_t *prefix, int column, int row, int type,
 	value_cb_t cb_func)
 {
-	callback_t *value;
-
-	/* Create a new entry in the MIB table */
-	if (g_cb_length < MAX_NR_VALUES) {
-		value = &g_cb[g_cb_length++];
-	} else {
-		lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': table overflow\n",
-			oid_ntoa(prefix), column, row);
+	value_t *value = mib_alloc_entry(prefix, column, row, type, -1);
+	if (!value)
 		return -1;
-	}
-
-	if (oid_build(&value->oid, prefix, column, row)) {
-		lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': oid overflow\n",
-			oid_ntoa(prefix), column, row);
-		return -1;
-	}
-
-	if (set_oid_encoded_length(&value->oid)) {
-		lprintf(LOG_ERR, "could not encode '%s': oid overflow\n", oid_ntoa(&value->oid));
-	}
 
 	/* Assign the callback handler */
 	value->func = cb_func;
@@ -243,8 +226,7 @@ static int mib_build_cbentry(const oid_t *prefix, int column, int row, int type,
 	return 0;
 }
 
-static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
-	const void *default_value)
+value_t *mib_alloc_entry(const oid_t *prefix, int column, int row, int type, short datalen)
 {
 	value_t *value;
 
@@ -254,24 +236,36 @@ static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 	} else {
 		lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': table overflow\n",
 			oid_ntoa(prefix), column, row);
-		return -1;
+		return NULL;
 	}
 
 	if (oid_build(&value->oid, prefix, column, row)) {
 		lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': oid overflow\n",
 			oid_ntoa(prefix), column, row);
-		return -1;
+		return NULL;
 	}
 
 	if (set_oid_encoded_length(&value->oid)) {
 		lprintf(LOG_ERR, "could not encode '%s': oid overflow\n", oid_ntoa(&value->oid));
+		return NULL;
 	}
 
-	if(mib_value_alloc(&value->data, type, type==BER_TYPE_OCTET_STRING?strlen((const char *)default_value):-1)) {
+	if(mib_value_alloc(&value->data, type, datalen)) {
 		lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': unsupported type %d\n",
 			oid_ntoa(&value->oid), column, row, type);
-		return -1;
+		return NULL;
 	}
+
+	return value;
+}
+
+static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
+	const void *default_value)
+{
+	value_t *value = mib_alloc_entry(prefix, column, row, type,
+			type==BER_TYPE_OCTET_STRING?strlen((const char *)default_value):-1);
+	if (!value)
+		return -1;
 
 	int ret;
 	if((ret=mib_set_value(&value->data, type, default_value))) {
@@ -501,9 +495,35 @@ static int mib_update_entry(const oid_t *prefix, int column, int row,
  * the MIB array, (see mini_snmpd.h for the value of MAX_NR_VALUES).
  */
 
-int probando ( const oid_t *oido ) {
-lprintf(LOG_ERR, "Within calbaco dor %s\n", oid_ntoa(oido));
-return 1;
+int set_char_test(const oid_t *oido, data_t *data) {
+	char msg[32] = "comprobando";
+	sprintf(msg+strlen(msg), " %d", rand());
+
+	int ret;
+	if((ret=mib_set_value(data, BER_TYPE_OCTET_STRING, (const void *)msg))) {
+		if (ret == 2){
+			lprintf(LOG_ERR, "could not assign value to MIB entry '%s': invalid default value\n",
+				oid_ntoa(oido));
+		}
+		return -1;
+	}
+
+	return 1;
+}
+
+int set_int_test (const oid_t *oido, data_t *data) {
+	int j = 325;
+
+	int ret;
+	if((ret=mib_set_value(data, BER_TYPE_INTEGER, (const void *)j))) {
+		if (ret == 2){
+			lprintf(LOG_ERR, "could not assign value to MIB entry '%s': invalid default value\n",
+				oid_ntoa(oido));
+		}
+		return -1;
+	}
+
+	return 1;
 }
 
 int mib_build(void)
@@ -512,12 +532,6 @@ int mib_build(void)
 	char name[16];
 	int i;
 
-if (mib_build_cbentry(&m_demoif_1_oid, 1, 0, BER_TYPE_INTEGER, probando) == -1) {
-	return -1;
-}
-if (mib_build_cbentry(&m_demoif_2_oid, 2, 0, BER_TYPE_INTEGER, probando) == -1) {
-	return -1;
-}
 	/* Determine some static values that are not known at compile-time */
 	if (gethostname(hostname, sizeof (hostname)) == -1) {
 		hostname[0] = '\0';
@@ -656,6 +670,11 @@ if (mib_build_cbentry(&m_demoif_2_oid, 2, 0, BER_TYPE_INTEGER, probando) == -1) 
 		return -1;
 	}
 #endif
+
+	if (mib_build_cbentry(&m_demoif_1_oid, 1, 0, BER_TYPE_INTEGER, set_int_test) == -1
+		|| mib_build_cbentry(&m_demoif_2_oid, 2, 0, BER_TYPE_OCTET_STRING, set_char_test) == -1) {
+		return -1;
+	}
 
 	return 0;
 }
@@ -853,6 +872,8 @@ value_t *mib_find(const oid_t *oid, int *pos)
 		if (g_mib[*pos].oid.subid_list_length >= oid->subid_list_length
 			&& !memcmp(g_mib[*pos].oid.subid_list, oid->subid_list,
 				oid->subid_list_length * sizeof (oid->subid_list[0]))) {
+			if ( g_mib[*pos].func )
+				g_mib[*pos].func(&g_mib[*pos].oid, &g_mib[*pos].data);
 			return &g_mib[*pos];
 		}
 	}
@@ -872,34 +893,6 @@ value_t *mib_findnext(const oid_t *oid)
 	}
 
 	return NULL;
-}
-
-void mib_find_cb(const oid_t *oid, value_cb_t *cb)
-{
-	int pos;
-
-	/* Find the OID in the MIB that is exactly the given one or a subid */
-	for ( pos = 0 ; pos < g_cb_length; pos++) {
-		if (g_cb[pos].oid.subid_list_length >= oid->subid_list_length
-			&& !memcmp(g_cb[pos].oid.subid_list, oid->subid_list,
-				oid->subid_list_length * sizeof (oid->subid_list[0]))) {
-			*cb = g_cb[pos].func;
-			return;
-		}
-	}
-}
-
-void mib_findnext_cb(const oid_t *oid, value_cb_t *cb)
-{
-	int pos;
-
-	/* Find the OID in the MIB that is the one after the given one */
-	for (pos = 0; pos < g_cb_length; pos++) {
-		if (oid_cmp(&g_cb[pos].oid, oid) > 0) {
-			*cb = g_cb[pos].func;
-			return;
-		}
-	}
 }
 
 
