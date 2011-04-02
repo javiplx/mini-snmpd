@@ -259,28 +259,6 @@ value_t *mib_alloc_entry(const oid_t *prefix, int column, int row, int type)
 	return value;
 }
 
-static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
-	const void *default_value)
-{
-	value_t *value = mib_alloc_entry(prefix, column, row, type);
-	if (!value)
-		return -1;
-
-	int ret;
-	if((ret=mib_set_value(&value->data, type, default_value))) {
-		if (ret == 1) {
-			lprintf(LOG_ERR, "could not assign value to MIB entry '%s.%d.%d': unsupported type %d\n",
-					oid_ntoa(&value->oid), column, row, type);
-		} else if (ret == 2){
-			lprintf(LOG_ERR, "could not assign value to MIB entry '%s.%d.%d': invalid default value\n",
-				oid_ntoa(&value->oid), column, row);
-		}
-		return -1;
-	}
-
-	return 0;
-}
-
 /* Create the OID from the prefix, the column and the row */
 int oid_build(oid_t *dest, const oid_t *prefix, int column, int row)
 {
@@ -387,6 +365,7 @@ int mib_set_value(data_t *data, int type, const void *dataval)
 		case BER_TYPE_OCTET_STRING:
 		case BER_TYPE_OID:
 			if (dataval == NULL) {
+				lprintf(LOG_ERR, "could not assign value to MIB entry: invalid default value\n");
 				return 2;
 			}
 			break;
@@ -423,6 +402,7 @@ int mib_set_value(data_t *data, int type, const void *dataval)
 			}
 			break;
 		default:
+			lprintf(LOG_ERR, "could not assign value to MIB entry: unsupported type %d\n", type);
 			return 1;
 	}
 
@@ -535,7 +515,7 @@ int set_int_test (const oid_t *oido, data_t *data) {
 	return 1;
 }
 
-int mib_build(void)
+int mib_init(void)
 {
 	char hostname[MAX_STRING_SIZE];
 	char name[16];
@@ -548,15 +528,87 @@ int mib_build(void)
 		hostname[sizeof (hostname) - 1] = '\0';
 	}
 
+	int pos = 0;
+
+	if (mib_set_value(&g_mib[pos++].data, BER_TYPE_OCTET_STRING, g_description)
+		|| mib_set_value(&g_mib[pos++].data, BER_TYPE_OID, g_vendor)
+		|| mib_set_value(&g_mib[pos++].data, BER_TYPE_TIME_TICKS, (const void *)get_process_uptime())
+		|| mib_set_value(&g_mib[pos++].data, BER_TYPE_OCTET_STRING, g_contact)
+		|| mib_set_value(&g_mib[pos++].data, BER_TYPE_OCTET_STRING, hostname)
+		|| mib_set_value(&g_mib[pos++].data, BER_TYPE_OCTET_STRING, g_location)) {
+		return -1;
+	}
+
+	oid_t oid;
+
+	if (oid_build(&oid, &m_if_1_oid, 1, 0) || !mib_find(&oid, &pos)) return -1;
+	if (g_interface_list_length > 0) {
+		if (mib_set_value(&g_mib[pos++].data, BER_TYPE_INTEGER, (const void *)g_interface_list_length)) {
+			return -1;
+		}
+		for (i = 0; i < g_interface_list_length; i++) {
+			if (mib_set_value(&g_mib[pos++].data, BER_TYPE_INTEGER, (const void *)(i + 1))) {
+				return -1;
+			}
+		}
+		for (i = 0; i < g_interface_list_length; i++) {
+			if (mib_set_value(&g_mib[pos++].data, BER_TYPE_OCTET_STRING, g_interface_list[i])) {
+				return -1;
+			}
+		}
+	}
+
+	if (oid_build(&oid, &m_disk_oid, 1, 1) || ! mib_find(&oid, &pos)) return -1;
+	if (g_disk_list_length > 0) {
+		for (i = 0; i < g_disk_list_length; i++) {
+			if (mib_set_value(&g_mib[pos++].data, BER_TYPE_INTEGER, (const void *)(i + 1))) {
+				return -1;
+			}
+		}
+		for (i = 0; i < g_disk_list_length; i++) {
+			if (mib_set_value(&g_mib[pos++].data, BER_TYPE_OCTET_STRING, g_disk_list[i])) {
+				return -1;
+			}
+		}
+	}
+
+	if (oid_build(&oid, &m_load_oid, 1, 1) || ! mib_find(&oid, &pos)) return -1;
+	for (i = 0; i < 3; i++) {
+		if (mib_set_value(&g_mib[pos++].data, BER_TYPE_INTEGER, (const void *)(i + 1))) {
+			return -1;
+		}
+	}
+	for (i = 0; i < 3; i++) {
+		snprintf(name, sizeof (name), "Load-%d", m_load_avg_times[i]);
+		if (mib_set_value(&g_mib[pos++].data, BER_TYPE_OCTET_STRING, name)) {
+			return -1;
+		}
+	}
+
+	if (oid_build(&oid, &m_load_oid, 4, 1) || ! mib_find(&oid, &pos)) return -1;
+	for (i = 0; i < 3; i++) {
+		snprintf(name, sizeof (name), "%d", m_load_avg_times[i]);
+		if (mib_set_value(&g_mib[pos++].data, BER_TYPE_OCTET_STRING, name)) {
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+int mib_build(void)
+{
+	int i;
+
 	/* The system MIB: basic info about the host (SNMPv2-MIB.txt)
 	 * Caution: on changes, adapt the corresponding mib_update() section too!
 	 */
-	if (mib_build_entry(&m_system_oid, 1, 0, BER_TYPE_OCTET_STRING, g_description) == -1
-		|| mib_build_entry(&m_system_oid, 2, 0, BER_TYPE_OID, g_vendor) == -1
+	if (!mib_alloc_entry(&m_system_oid, 1, 0, BER_TYPE_OCTET_STRING)
+		|| !mib_alloc_entry(&m_system_oid, 2, 0, BER_TYPE_OID)
 		|| !mib_alloc_entry(&m_system_oid, 3, 0, BER_TYPE_TIME_TICKS)
-		|| mib_build_entry(&m_system_oid, 4, 0, BER_TYPE_OCTET_STRING, g_contact) == -1
-		|| mib_build_entry(&m_system_oid, 5, 0, BER_TYPE_OCTET_STRING, hostname) == -1
-		|| mib_build_entry(&m_system_oid, 6, 0, BER_TYPE_OCTET_STRING, g_location) == -1) {
+		|| !mib_alloc_entry(&m_system_oid, 4, 0, BER_TYPE_OCTET_STRING)
+		|| !mib_alloc_entry(&m_system_oid, 5, 0, BER_TYPE_OCTET_STRING)
+		|| !mib_alloc_entry(&m_system_oid, 6, 0, BER_TYPE_OCTET_STRING)) {
 		return -1;
 	}
 
@@ -564,16 +616,16 @@ int mib_build(void)
 	 * Caution: on changes, adapt the corresponding mib_update() section too!
 	 */
 	if (g_interface_list_length > 0) {
-		if (mib_build_entry(&m_if_1_oid, 1, 0, BER_TYPE_INTEGER, (const void *)g_interface_list_length) == -1) {
+		if (!mib_alloc_entry(&m_if_1_oid, 1, 0, BER_TYPE_INTEGER)) {
 			return -1;
 		}
 		for (i = 0; i < g_interface_list_length; i++) {
-			if (mib_build_entry(&m_if_2_oid, 1, i + 1, BER_TYPE_INTEGER, (const void *)(i + 1)) == -1) {
+			if (!mib_alloc_entry(&m_if_2_oid, 1, i + 1, BER_TYPE_INTEGER)) {
 				return -1;
 			}
 		}
 		for (i = 0; i < g_interface_list_length; i++) {
-			if (mib_build_entry(&m_if_2_oid, 2, i + 1, BER_TYPE_OCTET_STRING, g_interface_list[i]) == -1) {
+			if (!mib_alloc_entry(&m_if_2_oid, 2, i + 1, BER_TYPE_OCTET_STRING)) {
 				return -1;
 			}
 		}
@@ -613,12 +665,12 @@ int mib_build(void)
 	 */
 	if (g_disk_list_length > 0) {
 		for (i = 0; i < g_disk_list_length; i++) {
-			if (mib_build_entry(&m_disk_oid, 1, i + 1, BER_TYPE_INTEGER, (const void *)(i + 1)) == -1) {
+			if (!mib_alloc_entry(&m_disk_oid, 1, i + 1, BER_TYPE_INTEGER)) {
 				return -1;
 			}
 		}
 		for (i = 0; i < g_disk_list_length; i++) {
-			if (mib_build_entry(&m_disk_oid, 2, i + 1, BER_TYPE_OCTET_STRING, g_disk_list[i]) == -1) {
+			if (!mib_alloc_entry(&m_disk_oid, 2, i + 1, BER_TYPE_OCTET_STRING)) {
 				return -1;
 			}
 		}
@@ -635,13 +687,12 @@ int mib_build(void)
 	 * Caution: on changes, adapt the corresponding mib_update() section too!
 	 */
 	for (i = 0; i < 3; i++) {
-		if (mib_build_entry(&m_load_oid, 1, i + 1, BER_TYPE_INTEGER, (const void *)(i + 1)) == -1) {
+		if (!mib_alloc_entry(&m_load_oid, 1, i + 1, BER_TYPE_INTEGER)) {
 			return -1;
 		}
 	}
 	for (i = 0; i < 3; i++) {
-		snprintf(name, sizeof (name), "Load-%d", m_load_avg_times[i]);
-		if (mib_build_entry(&m_load_oid, 2, i + 1, BER_TYPE_OCTET_STRING, name) == -1) {
+		if (!mib_alloc_entry(&m_load_oid, 2, i + 1, BER_TYPE_OCTET_STRING)) {
 			return -1;
 		}
 	}
@@ -649,8 +700,7 @@ int mib_build(void)
 		return -1;
 	}
 	for (i = 0; i < 3; i++) {
-		snprintf(name, sizeof (name), "%d", m_load_avg_times[i]);
-		if (mib_build_entry(&m_load_oid, 4, i + 1, BER_TYPE_OCTET_STRING, name) == -1) {
+		if (!mib_alloc_entry(&m_load_oid, 4, i + 1, BER_TYPE_OCTET_STRING)) {
 			return -1;
 		}
 	}
@@ -685,7 +735,7 @@ int mib_build(void)
 		return -1;
 	}
 
-	return 0;
+	return mib_init();
 }
 
 int mib_update(int full)
