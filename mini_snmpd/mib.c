@@ -204,12 +204,33 @@ static int encode_snmp_element_unsigned(value_t *value, int type, unsigned int t
  * Helper functions for the MIB
  */
 
+int mib_set_value(value_t *value, int type, const void *default_value);
+
+int oid_build(oid_t *dest, const oid_t *prefix, int column, int row) {
+
+	/* Create the OID from the prefix, the column and the row */
+	memcpy(dest, prefix, sizeof (oid_t));
+	if (dest->subid_list_length < MAX_NR_SUBIDS) {
+		dest->subid_list[dest->subid_list_length++] = column;
+	} else {
+		return -1;
+	}
+	if (dest->subid_list_length < MAX_NR_SUBIDS) {
+		dest->subid_list[dest->subid_list_length++] = row;
+	} else {
+		return -1;
+	}
+
+	return 0;
+}
+
 static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 	const void *default_value)
 {
 	value_t *value;
 	int length;
 	int i;
+	int ret;
 
 	/* Create a new entry in the MIB table */
 	if (g_mib_length < MAX_NR_VALUES) {
@@ -221,17 +242,7 @@ static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 	}
 
 	/* Create the OID from the prefix, the column and the row */
-	memcpy(&value->oid, prefix, sizeof (value->oid));
-	if (value->oid.subid_list_length < MAX_NR_SUBIDS) {
-		value->oid.subid_list[value->oid.subid_list_length++] = column;
-	} else {
-		lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': oid overflow\n",
-			oid_ntoa(prefix), column, row);
-		return -1;
-	}
-	if (value->oid.subid_list_length < MAX_NR_SUBIDS) {
-		value->oid.subid_list[value->oid.subid_list_length++] = row;
-	} else {
+	if (oid_build(&value->oid, prefix, column, row) == -1) {
 		lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': oid overflow\n",
 			oid_ntoa(prefix), column, row);
 		return -1;
@@ -266,20 +277,6 @@ static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 	}
 	value->oid.encoded_length = length;
 
-	/* Paranoia check against invalid default parameter (null pointer) */
-	switch (type) {
-		case BER_TYPE_OCTET_STRING:
-		case BER_TYPE_OID:
-			if (default_value == NULL) {
-				lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': invalid default value\n",
-					oid_ntoa(prefix), column, row);
-				return -1;
-			}
-			break;
-		default:
-			break;
-	}
-
 	/* Create a data buffer for the value depending on the type:
 	 *
 	 * - strings and oids are assumed to be static or have the maximum allowed length
@@ -290,25 +287,16 @@ static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 			value->data.max_length = sizeof (int) + 2;
 			value->data.encoded_length = 0;
 			value->data.buffer = malloc(value->data.max_length);
-			if (encode_snmp_element_integer(value, (int)default_value) == -1) {
-				return -1;
-			}
 			break;
 		case BER_TYPE_OCTET_STRING:
 			value->data.max_length = strlen((const char *)default_value) + 4;
 			value->data.encoded_length = 0;
 			value->data.buffer = malloc(value->data.max_length);
-			if (encode_snmp_element_string(value, (const char *)default_value) == -1) {
-				return -1;
-			}
 			break;
 		case BER_TYPE_OID:
 			value->data.max_length = MAX_NR_SUBIDS * 5 + 4;
 			value->data.encoded_length = 0;
 			value->data.buffer = malloc(value->data.max_length);
-			if (encode_snmp_element_oid(value, oid_aton((const char *)default_value)) == -1) {
-				return -1;
-			}
 			break;
 		case BER_TYPE_COUNTER:
 		case BER_TYPE_GAUGE:
@@ -316,14 +304,22 @@ static int mib_build_entry(const oid_t *prefix, int column, int row, int type,
 			value->data.max_length = sizeof (unsigned int) + 2;
 			value->data.encoded_length = 0;
 			value->data.buffer = malloc(value->data.max_length);
-			if (encode_snmp_element_unsigned(value, type, (unsigned int)default_value) == -1) {
-				return -1;
-			}
 			break;
 		default:
 			lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': unsupported type %d\n",
 				oid_ntoa(prefix), column, row, type);
 			return -1;
+	}
+
+	ret = mib_set_value(value, type, default_value);
+	if(ret) {
+		if (ret == 1)
+			lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': invalid default value\n",
+				oid_ntoa(prefix), column, row);
+		else if (ret == 2)
+			lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': unsupported type %d\n",
+				oid_ntoa(prefix), column, row, type);
+		return -1;
 	}
 
 	return 0;
@@ -347,20 +343,11 @@ static int mib_update_entry(const oid_t *prefix, int column, int row,
 {
 	value_t *value;
 	oid_t oid;
+	int ret;
 
 	/* Create the OID from the prefix, the column and the row */
-	memcpy(&oid, prefix, sizeof (oid));
-	if (oid.subid_list_length < MAX_NR_SUBIDS) {
-		oid.subid_list[oid.subid_list_length++] = column;
-	} else {
-		lprintf(LOG_ERR, "could not update MIB entry '%s.%d.%d': oid overflow\n",
-			oid_ntoa(prefix), column, row);
-		return -1;
-	}
-	if (oid.subid_list_length < MAX_NR_SUBIDS) {
-		oid.subid_list[oid.subid_list_length++] = row;
-	} else {
-		lprintf(LOG_ERR, "could not update MIB entry '%s.%d.%d': oid overflow\n",
+	if (oid_build(&oid, prefix, column, row) == -1) {
+		lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': oid overflow\n",
 			oid_ntoa(prefix), column, row);
 		return -1;
 	}
@@ -373,14 +360,28 @@ static int mib_update_entry(const oid_t *prefix, int column, int row,
 		return -1;
 	}
 
+	ret = mib_set_value(value, type, new_value);
+	if(ret) {
+		if (ret == 1)
+			lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': invalid default value\n",
+				oid_ntoa(prefix), column, row);
+		else if (ret == 2)
+			lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': unsupported type %d\n",
+				oid_ntoa(prefix), column, row, type);
+		return -1;
+	}
+
+	return 0;
+}
+
+int mib_set_value(value_t *value, int type, const void *new_value) {
+
 	/* Paranoia check against invalid value parameter (null pointer) */
 	switch (type) {
 		case BER_TYPE_OCTET_STRING:
 		case BER_TYPE_OID:
 			if (new_value == NULL) {
-				lprintf(LOG_ERR, "could not update MIB entry '%s.%d.%d': invalid default value\n",
-					oid_ntoa(prefix), column, row);
-				return -1;
+				return 1;
 			}
 			break;
 		default:
@@ -415,9 +416,7 @@ static int mib_update_entry(const oid_t *prefix, int column, int row,
 			}
 			break;
 		default:
-			lprintf(LOG_ERR, "could not update MIB entry '%s.%d.%d': unsupported type %d\n",
-				oid_ntoa(prefix), column, row, type);
-			return -1;
+			return 2;
 	}
 
 	return 0;
