@@ -62,12 +62,12 @@ static const int m_load_avg_times[3] = { 1, 5, 15 };
  * Helper functions for encoding values
  */
 
-static int encode_snmp_element_integer(value_t *value, int integer_value)
+static int encode_snmp_element_integer(data_t *data, int integer_value)
 {
 	unsigned char *buffer;
 	int length;
 
-	buffer = value->data.buffer;
+	buffer = data->buffer;
 	if (integer_value < -16777216 || integer_value > 16777215) {
 		length = 4;
 	} else if (integer_value < -32768 || integer_value > 32767) {
@@ -82,16 +82,16 @@ static int encode_snmp_element_integer(value_t *value, int integer_value)
 	while (length--) {
 		*buffer++ = ((unsigned int)integer_value >> (8 * length)) & 0xFF;
 	}
-	value->data.encoded_length = buffer - value->data.buffer;
+	data->encoded_length = buffer - data->buffer;
 	return 0;
 }
 
-static int encode_snmp_element_string(value_t *value, const char *string_value)
+static int encode_snmp_element_string(data_t *data, const char *string_value)
 {
 	unsigned char *buffer;
 	int length;
 
-	buffer = value->data.buffer;
+	buffer = data->buffer;
 	length = strlen(string_value);
 	*buffer++ = BER_TYPE_OCTET_STRING;
 	if (length > 65535) {
@@ -110,17 +110,17 @@ static int encode_snmp_element_string(value_t *value, const char *string_value)
 	while (*string_value) {
 		*buffer++ = (unsigned char)(*string_value++);
 	}
-	value->data.encoded_length = buffer - value->data.buffer;
+	data->encoded_length = buffer - data->buffer;
 	return 0;
 }
 
-static int encode_snmp_element_oid(value_t *value, const oid_t *oid_value)
+static int encode_snmp_element_oid(data_t *data, const oid_t *oid_value)
 {
 	unsigned char *buffer;
 	int length;
 	int i;
 
-	buffer = value->data.buffer;
+	buffer = data->buffer;
 	length = 1;
 	for (i = 2; i < oid_value->subid_list_length; i++) {
 		if (oid_value->subid_list[i] >= (1 << 28)) {
@@ -170,16 +170,16 @@ static int encode_snmp_element_oid(value_t *value, const oid_t *oid_value)
 			}
 		}
 	}
-	value->data.encoded_length = buffer - value->data.buffer;
+	data->encoded_length = buffer - data->buffer;
 	return 0;
 }
 
-static int encode_snmp_element_unsigned(value_t *value, int type, unsigned int ticks_value)
+static int encode_snmp_element_unsigned(data_t *data, int type, unsigned int ticks_value)
 {
 	unsigned char *buffer;
 	int length;
 
-	buffer = value->data.buffer;
+	buffer = data->buffer;
 	if (ticks_value & 0xFF000000) {
 		length = 4;
 	} else if (ticks_value & 0x00FF0000) {
@@ -194,7 +194,7 @@ static int encode_snmp_element_unsigned(value_t *value, int type, unsigned int t
 	while (length--) {
 		*buffer++ = (ticks_value >> (8 * length)) & 0xFF;
 	}
-	value->data.encoded_length = buffer - value->data.buffer;
+	data->encoded_length = buffer - data->buffer;
 	return 0;
 }
 
@@ -204,7 +204,7 @@ static int encode_snmp_element_unsigned(value_t *value, int type, unsigned int t
  * Helper functions for the MIB
  */
 
-int mib_set_value(value_t *value, int type, const void *default_value);
+int mib_set_value(data_t *data, int type, const void *default_value);
 
 int oid_build(oid_t *dest, const oid_t *prefix, int column, int row) {
 
@@ -238,6 +238,9 @@ static int mib_build_entry(const oid_t *prefix, int column, int row, int type)
 			oid_ntoa(prefix), column, row);
 		return -1;
 	}
+
+	/* Assign the callback handler */
+	value->set = NULL;
 
 	/* Create the OID from the prefix, the column and the row */
 	if (oid_build(&value->oid, prefix, column, row) == -1) {
@@ -352,7 +355,7 @@ static int mib_update_entry(const oid_t *prefix, int column, int row,
 		return -1;
 	}
 
-	ret = mib_set_value(value, type, new_value);
+	ret = mib_set_value(&value->data, type, new_value);
 	if(ret) {
 		if (ret == 1)
 			lprintf(LOG_ERR, "could not create MIB entry '%s.%d.%d': invalid default value\n",
@@ -366,7 +369,7 @@ static int mib_update_entry(const oid_t *prefix, int column, int row,
 	return 0;
 }
 
-int mib_set_value(value_t *value, int type, const void *new_value)
+int mib_set_value(data_t *data, int type, const void *new_value)
 {
 	short datalen;
 
@@ -388,29 +391,29 @@ int mib_set_value(value_t *value, int type, const void *new_value)
 	 */
 	switch (type) {
 		case BER_TYPE_INTEGER:
-			if (encode_snmp_element_integer(value, (int)new_value) == -1) {
+			if (encode_snmp_element_integer(data, (int)new_value) == -1) {
 				return -1;
 			}
 			break;
 		case BER_TYPE_OCTET_STRING:
 			datalen = strlen(new_value);
-			if ((datalen+4) > value->data.max_length) {
-				value->data.max_length = datalen + 4;
-				value->data.buffer = realloc(value->data.buffer, value->data.max_length);
+			if ((datalen+4) > data->max_length) {
+				data->max_length = datalen + 4;
+				data->buffer = realloc(data->buffer, data->max_length);
 			}
-			if (encode_snmp_element_string(value, (const char *)new_value) == -1) {
+			if (encode_snmp_element_string(data, (const char *)new_value) == -1) {
 				return -1;
 			}
 			break;
 		case BER_TYPE_OID:
-			if (encode_snmp_element_oid(value, oid_aton((const char *)new_value)) == -1) {
+			if (encode_snmp_element_oid(data, oid_aton((const char *)new_value)) == -1) {
 				return -1;
 			}
 			break;
 		case BER_TYPE_COUNTER:
 		case BER_TYPE_GAUGE:
 		case BER_TYPE_TIME_TICKS:
-			if (encode_snmp_element_unsigned(value, type, (unsigned int)new_value) == -1) {
+			if (encode_snmp_element_unsigned(data, type, (unsigned int)new_value) == -1) {
 				return -1;
 			}
 			break;
@@ -447,6 +450,19 @@ int mib_set_value(value_t *value, int type, const void *new_value)
  * Note that the maximum number of MIB variables is restricted by the length of
  * the MIB array, (see mini_snmpd.h for the value of MAX_NR_VALUES).
  */
+
+int callback_set_char(data_t *data) {
+	char msg[32] = "comprobando";
+	snprintf(msg+strlen(msg), 32, " %d", rand());
+
+	return mib_set_value(data, BER_TYPE_OCTET_STRING, (const void *)msg);
+}
+
+int callback_set_int (data_t *data)
+{
+	int j = 325;
+	return mib_set_value(data, BER_TYPE_INTEGER, (const void *)j);
+}
 
 int mib_init(void)
 {
@@ -656,6 +672,11 @@ int mib_build(void)
 		|| mib_build_entry(&m_demo_oid, 2, 0, BER_TYPE_INTEGER) == -1) {
 		return -1;
 	}
+
+	if (mib_build_entry(&m_demo_oid, 3, 0, BER_TYPE_OCTET_STRING) == -1)  {
+		return -1;
+	}
+	g_mib[g_mib_length-1].set = callback_set_char;
 #endif
 
 	return mib_init();
@@ -854,6 +875,12 @@ value_t *mib_find(const oid_t *oid, int *pos)
 		if (g_mib[*pos].oid.subid_list_length >= oid->subid_list_length
 			&& !memcmp(g_mib[*pos].oid.subid_list, oid->subid_list,
 				oid->subid_list_length * sizeof (oid->subid_list[0]))) {
+			if ( g_mib[*pos].set ) {
+				if(g_mib[*pos].set(&g_mib[*pos].data)) {
+					lprintf(LOG_ERR, "could not assign value to MIB entry '%s'\n",
+						oid_ntoa(oid));
+				}
+			}
 			return &g_mib[*pos];
 		}
 	}
@@ -868,6 +895,12 @@ value_t *mib_findnext(const oid_t *oid)
 	/* Find the OID in the MIB that is the one after the given one */
 	for (pos = 0; pos < g_mib_length; pos++) {
 		if (oid_cmp(&g_mib[pos].oid, oid) > 0) {
+			if ( g_mib[pos].set ) {
+				if(g_mib[pos].set(&g_mib[pos].data)) {
+					lprintf(LOG_ERR, "could not assign value to MIB entry '%s'\n",
+						oid_ntoa(oid));
+				}
+			}
 			return &g_mib[pos];
 		}
 	}

@@ -159,9 +159,12 @@ typedef struct data_s {
 	short encoded_length;
 } data_t;
 
+typedef int (*value_cb_t)(data_t *);
+
 typedef struct value_s {
 	oid_t oid;
 	data_t data;
+	value_cb_t set;
 } value_t;
 
 typedef struct request_s {
